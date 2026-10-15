@@ -1,0 +1,1 @@
+Read AI_STATE.md. It contains the project state. Confirm context is loaded in one sentence and state the exact next step.

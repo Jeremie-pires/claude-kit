@@ -1,0 +1,5 @@
+{
+  "name": "claude-kit",
+  "version": "0.2.0",
+  "description": "State commands (load/save-state, setup-memory), /add-rule, personal skills and default web references"
+}

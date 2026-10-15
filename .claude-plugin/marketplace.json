@@ -1,0 +1,11 @@
+{
+  "name": "workshop",
+  "owner": { "name": "claude-kit" },
+  "plugins": [
+    {
+      "name": "claude-kit",
+      "source": "./plugins/claude-kit",
+      "description": "Personal working methods, commands, skills and default references"
+    }
+  ]
+}

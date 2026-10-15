@@ -1,0 +1,9 @@
+﻿# secrets / local state
+.env
+.env.*
+*.local.json
+.credentials.json
+history.jsonl
+node_modules/
+.caveman-*
+*.log

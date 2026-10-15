@@ -1,0 +1,58 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline-command.sh\""
+  },
+  "env": {
+    "DO_NOT_TRACK": "1"
+  },
+  "permissions": {
+    "ask": [
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -f:*)",
+      "Bash(git branch -D:*)",
+      "Bash(rm -rf:*)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.dev)",
+      "Read(./.env.production)"
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "addy-agent-skills": {
+      "source": { "source": "git", "url": "https://github.com/addyosmani/agent-skills.git" }
+    },
+    "caveman": {
+      "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    },
+    "workshop": {
+      "source": { "source": "github", "repo": "Jeremie-pires/claude-kit" }
+    }
+  },
+  "enabledPlugins": {
+    "agent-skills@addy-agent-skills": true,
+    "caveman@caveman": true,
+    "claude-kit@workshop": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"$USERPROFILE/.claude-kit/bootstrap.ps1\" -Apply -Quiet",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "autoUpdatesChannel": "latest",
+  "theme": "dark",
+  "model": "sonnet"
+}
