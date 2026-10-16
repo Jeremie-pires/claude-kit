@@ -51,7 +51,14 @@ gh repo clone Jeremie-pires/claude-kit $HOME\.claude-kit
 & $HOME\.claude-kit\bootstrap.ps1 -Apply
 ```
 
-Then start Claude Code. The `claude-kit` plugin and the `workshop` marketplace are enabled by the merged settings; plugins are fetched on first launch.
+`-Apply` also installs the missing plugins (`claude-kit@workshop`, `caveman@caveman`) through `claude plugin install --scope user`. Settings alone only *enable* a plugin, they do not download it. If the install step reports a failure, run the two commands by hand inside Claude Code:
+
+```
+/plugin install claude-kit@workshop
+/plugin install caveman@caveman
+```
+
+Then restart Claude Code and check with `/plugin list`.
 
 ### What `-Apply` changes
 
@@ -60,6 +67,7 @@ Then start Claude Code. The `claude-kit` plugin and the `workshop` marketplace a
 | `~/.claude/settings.json` | **merged**: kit keys added, everything local kept (permissions are unioned, hooks appended) |
 | `~/.claude/CLAUDE.md` | replaced by `global/CLAUDE.md` (previous file backed up) |
 | `~/.claude/statusline-command.sh` | replaced (backed up) |
+| user-scope plugins | missing ones from `enabledPlugins` are installed via the `claude` CLI |
 
 Never touched: `.credentials.json`, `history.jsonl`, `projects/`, any project-level `.claude/`.
 
@@ -112,7 +120,8 @@ Audience: an AI coding agent (Claude Code) asked by the user to install, update 
    - `~/.claude/settings.json` parses as JSON and contains `claude-kit@workshop` in `enabledPlugins`, the `workshop` marketplace, and a `SessionStart` hook that calls `bootstrap.ps1`.
    - `~/.claude/CLAUDE.md` and `~/.claude/statusline-command.sh` exist.
    - `.bak-<timestamp>` copies exist for anything that was replaced.
-8. **Tell the user** to restart Claude Code. At the next launch the plugins are downloaded; then `/plugin` should list `claude-kit` and `/claude-kit:add-rule` should be available.
+   - `claude plugin list` shows `claude-kit@workshop` and `caveman@caveman` as installed and enabled. `-Apply` installs them itself; if it printed `! install failed`, retry with `claude plugin install <id> --scope user`, and if that fails too, give the user the `/plugin install <id>` commands.
+8. **Tell the user** to restart Claude Code, then check `/plugin list` and that `/claude-kit:add-rule` is available. Mention that Claude Code may show its own one-time prompts at first launch (for example the fullscreen option); these are not caused by the kit.
 9. **Report** in a few lines: files changed, backup paths, anything skipped or failed.
 
 ### Remove
