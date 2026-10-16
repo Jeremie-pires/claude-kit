@@ -137,4 +137,26 @@ if ($before -eq $after) {
 Sync-File (Join-Path $KitDir 'global\CLAUDE.md') (Join-Path $claude 'CLAUDE.md')
 Sync-File (Join-Path $KitDir 'global\statusline-command.sh') (Join-Path $claude 'statusline-command.sh')
 
+# 4. Install enabled kit plugins that are not installed yet (enabledPlugins alone does not download them)
+$installedPath = Join-Path $claude 'plugins\installed_plugins.json'
+$installed = @()
+if (Test-Path $installedPath) { $installed = @((ReadJson $installedPath).plugins.PSObject.Properties.Name) }
+$wanted = @()
+if (HasProp $base 'enabledPlugins') { $wanted = @($base.enabledPlugins.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object { $_.Name }) }
+$missing = @($wanted | Where-Object { $installed -notcontains $_ })
+$claudeCli = Get-Command claude -ErrorAction SilentlyContinue
+
+foreach ($id in $missing) {
+  if (-not $Apply) { Say "~ would install plugin $id"; continue }
+  if (-not $claudeCli) { Say "! claude CLI not found; run in Claude Code: /plugin install $id"; continue }
+  if ($Quiet) {
+    # SessionStart hook: never block startup, install in the background
+    Start-Process -FilePath $claudeCli.Source -ArgumentList @('plugin', 'install', $id, '--scope', 'user') -WindowStyle Hidden
+  } else {
+    Say "+ installing plugin $id"
+    & $claudeCli.Source plugin install $id --scope user
+    if ($LASTEXITCODE -ne 0) { Say "! install failed for $id; run in Claude Code: /plugin install $id" }
+  }
+}
+
 if (-not $Apply) { Say "`nPreview only. Re-run with -Apply to write." }
