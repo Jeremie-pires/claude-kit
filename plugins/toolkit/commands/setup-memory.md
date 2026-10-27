@@ -25,7 +25,7 @@ Set up the memory files of the current project. Global rules (security, code qua
      Leave out any section you cannot fill from the files. Mark guesses with `(to confirm)`.
    - Present: do not rewrite it. Propose additions only, for missing commands or stack facts.
 
-3. **`AI_STATE.md`** at the root, if missing, using the template of `/claude-kit:save-state` with:
+3. **`AI_STATE.md`** at the root, if missing, using the template of `/toolkit:save-state` with:
    - Done: "Memory files initialized."
    - Current state: one line from step 1.
    - Next steps: "Awaiting instructions."

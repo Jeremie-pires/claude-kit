@@ -1,5 +1,5 @@
 {
-  "name": "claude-kit",
+  "name": "toolkit",
   "description": "State commands (load/save-state, setup-memory), /add-rule, personal skills and default web references",
   "author": { "name": "Jeremie Pires" }
 }

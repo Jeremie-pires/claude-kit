@@ -32,8 +32,8 @@ Use a skill only when it clearly applies. When several cover the same need, use 
 | Security (auth, sessions, input, secrets) | `agent-skills:security-and-hardening` | — |
 | UI / performance | `agent-skills:frontend-ui-engineering` / `:performance-optimization` | — |
 | Pre-release | `agent-skills:ship` | — |
-| Wording of user-facing text | `claude-kit:humanizer` | — |
-| Library, CLI, API facts | `claude-kit:references` | memory |
+| Wording of user-facing text | `toolkit:humanizer` | — |
+| Library, CLI, API facts | `toolkit:references` | memory |
 
 ## Security
 - Zero secrets in code, commits, `AI_STATE.md` or chat. Secrets live in `.env` (gitignored) or env vars; keep `.env.example` current.
@@ -50,12 +50,12 @@ Use a skill only when it clearly applies. When several cover the same need, use 
 ## Memory & state
 - Project state (done / next / decisions) lives in `AI_STATE.md`, committed with the project. Rules and methods live in `CLAUDE.md`. Never mix them.
 - Claude's auto-memory holds only personal preferences about how to work, never project state.
-- When resuming ("on reprend", "où en est-on") and `AI_STATE.md` exists, read it first (`/claude-kit:load-state`).
-- At the end of a work session or milestone, run `/claude-kit:save-state` and stage `AI_STATE.md` with that commit. Not on every commit.
+- When resuming ("on reprend", "où en est-on") and `AI_STATE.md` exists, read it first (`/toolkit:load-state`).
+- At the end of a work session or milestone, run `/toolkit:save-state` and stage `AI_STATE.md` with that commit. Not on every commit.
 - Commits follow Conventional Commits unless the project says otherwise.
 
 ## References
 Before relying on memory for a library, API, tool CLI, security rule or icon choice, use the `references` skill and consult the official source it lists. Quote the source used.
 
 ## Learning new rules
-New working methods are added to this file only on explicit request (`/claude-kit:add-rule`), shown to the user first, kept short, and checked against existing rules to avoid contradictions.
+New working methods are added to this file only on explicit request (`/toolkit:add-rule`), shown to the user first, kept short, and checked against existing rules to avoid contradictions.

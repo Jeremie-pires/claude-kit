@@ -147,6 +147,11 @@ if ($null -eq $base) {
     }
   }
 
+  # Former plugin ids, dropped once the kit enables their new name
+  if ((HasProp $cur 'enabledPlugins') -and (HasProp $cur.enabledPlugins 'toolkit@workshop')) {
+    $cur.enabledPlugins.PSObject.Properties.Remove('claude-kit@workshop')
+  }
+
   # permissions: union of lists
   if (HasProp $base 'permissions') {
     if (-not (HasProp $cur 'permissions')) { SetProp $cur 'permissions' ([pscustomobject]@{}) }
@@ -236,10 +241,18 @@ foreach ($id in $missing) {
   if (-not (Run-Claude @('plugin', 'install', $id, '--scope', 'user'))) { Warn "install failed for $id; run in Claude Code: /plugin install $id" }
 }
 
-if ($Apply -and $pulled -and $claudeCli -and ($installed -contains 'claude-kit@workshop')) {
-  Say '+ refreshing claude-kit@workshop (restart Claude Code to load it)'
+if ($installed -contains 'claude-kit@workshop') {
+  if (-not $Apply) { Say '~ would uninstall plugin claude-kit@workshop (renamed to toolkit@workshop)' }
+  elseif ($claudeCli) {
+    Say '+ uninstalling plugin claude-kit@workshop (renamed to toolkit@workshop)'
+    if (-not (Run-Claude @('plugin', 'uninstall', 'claude-kit@workshop', '--scope', 'user'))) { Warn 'uninstall failed for claude-kit@workshop; run in Claude Code: /plugin uninstall claude-kit@workshop' }
+  }
+}
+
+if ($Apply -and $pulled -and $claudeCli -and ($installed -contains 'toolkit@workshop')) {
+  Say '+ refreshing toolkit@workshop (restart Claude Code to load it)'
   if (-not (Run-Claude @('plugin', 'marketplace', 'update', 'workshop'))) { Warn 'marketplace update failed for workshop' }
-  elseif (-not (Run-Claude @('plugin', 'update', 'claude-kit@workshop', '--scope', 'user'))) { Warn 'plugin update failed for claude-kit@workshop' }
+  elseif (-not (Run-Claude @('plugin', 'update', 'toolkit@workshop', '--scope', 'user'))) { Warn 'plugin update failed for toolkit@workshop' }
 }
 
 # 5. Record what was applied and any warnings (read by the status line)

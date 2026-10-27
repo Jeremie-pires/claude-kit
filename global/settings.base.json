@@ -45,7 +45,7 @@
   "enabledPlugins": {
     "agent-skills@addy-agent-skills": true,
     "caveman@caveman": true,
-    "claude-kit@workshop": true
+    "toolkit@workshop": true
   },
   "hooks": {
     "SessionStart": [
