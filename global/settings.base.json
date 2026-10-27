@@ -1,26 +1,37 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "bash \"$HOME/.claude/statusline-command.sh\""
+    "command": "node \"$HOME/.claude/statusline.js\""
   },
   "env": {
     "DO_NOT_TRACK": "1"
   },
   "permissions": {
     "ask": [
-      "Bash(git push:*)"
+      "Bash(git push *)"
     ],
     "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(git clean -f:*)",
-      "Bash(git branch -D:*)",
-      "Bash(rm -rf:*)",
-      "Read(./.env)",
-      "Read(./.env.local)",
-      "Read(./.env.dev)",
-      "Read(./.env.production)"
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f *)",
+      "Bash(git clean -fd *)",
+      "Bash(git clean -fdx *)",
+      "Bash(git branch -D *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(rm -r -f *)",
+      "Bash(rm -Rf *)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Read(~/.claude/settings.json.bak-*)",
+      "Skill(caveman:caveman-setup)",
+      "Skill(caveman:caveman-manage)",
+      "Skill(caveman:caveman-optimize)",
+      "Skill(caveman:caveman-discover)",
+      "Skill(caveman:caveman-evidence-review)",
+      "Skill(caveman:caveman-learn)"
     ]
   },
   "extraKnownMarketplaces": {
@@ -46,7 +57,8 @@
           {
             "type": "command",
             "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"$USERPROFILE/.claude-kit/bootstrap.ps1\" -Apply -Quiet",
-            "timeout": 30
+            "async": true,
+            "timeout": 180
           }
         ]
       }

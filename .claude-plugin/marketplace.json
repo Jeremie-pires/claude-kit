@@ -1,6 +1,7 @@
 {
   "name": "workshop",
-  "owner": { "name": "claude-kit" },
+  "description": "Personal Claude Code kit of Jeremie Pires",
+  "owner": { "name": "Jeremie Pires" },
   "plugins": [
     {
       "name": "claude-kit",

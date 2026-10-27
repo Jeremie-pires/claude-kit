@@ -8,15 +8,19 @@
     gh repo clone Jeremie-pires/claude-kit $HOME\.claude-kit
     & $HOME\.claude-kit\bootstrap.ps1            # preview
     & $HOME\.claude-kit\bootstrap.ps1 -Apply     # apply
-  After that, a SessionStart hook runs it with -Apply -Quiet on every Claude launch.
+  After that, an async SessionStart hook runs it with -Apply -Quiet. In that mode the
+  git pull runs at most once every 24 hours, and warnings go to ~/.claude/claude-kit-sync.json
+  (the status line shows them as "kit!").
 
   What it touches: ~/.claude/settings.json (merged, backed up), ~/.claude/CLAUDE.md,
-  ~/.claude/statusline-command.sh. It never touches credentials, history or projects.
+  ~/.claude/statusline.js, ~/.claude/claude-kit-sync.json. It never touches credentials,
+  history or projects.
 #>
 [CmdletBinding()]
 param(
   [switch]$Apply,
   [switch]$Quiet,
+  [switch]$Force,
   [string]$KitDir = (Join-Path $HOME '.claude-kit'),
   [string]$Repo = 'https://github.com/Jeremie-pires/claude-kit.git'
 )
@@ -25,138 +29,218 @@ $ErrorActionPreference = 'Continue'
 $claude = Join-Path $HOME '.claude'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$statePath = Join-Path $claude 'claude-kit-sync.json'
+$pullEvery = [TimeSpan]::FromHours(24)
+$keepBackups = 5
+$warnings = New-Object System.Collections.Generic.List[string]
 
 function Say($m) { if (-not $Quiet) { Write-Host $m } }
-function HasProp($o, $n) { return $null -ne $o.PSObject.Properties[$n] }
+function Warn($m) { $warnings.Add($m); Say "! $m" }
+function HasProp($o, $n) { return $null -ne $o -and $null -ne $o.PSObject.Properties[$n] }
 function SetProp($o, $n, $v) {
   if (HasProp $o $n) { $o.$n = $v } else { $o | Add-Member -NotePropertyName $n -NotePropertyValue $v }
 }
+# Returns $null when the file exists but is not valid JSON, so callers never overwrite it blindly.
 function ReadJson($p) {
-  if (Test-Path $p) {
-    $t = [IO.File]::ReadAllText($p, $utf8)
-    if ($t.Trim()) { return ($t | ConvertFrom-Json) }
-  }
-  return [pscustomobject]@{}
+  if (-not (Test-Path $p)) { return [pscustomobject]@{} }
+  $t = [IO.File]::ReadAllText($p, $utf8)
+  if (-not $t.Trim()) { return [pscustomobject]@{} }
+  try { return ($t | ConvertFrom-Json -ErrorAction Stop) } catch { return $null }
 }
 function ToJson($o) {
   $j = $o | ConvertTo-Json -Depth 20
   return ($j -replace '\\u0027', "'" -replace '\\u003c', '<' -replace '\\u003e', '>' -replace '\\u0026', '&')
 }
-function Sync-File($src, $dst) {
+function FileHash($p) { if (Test-Path $p) { return (Get-FileHash $p).Hash } return '' }
+function Backup($p) {
+  if (-not (Test-Path $p)) { return }
+  Copy-Item $p "$p.bak-$stamp" -Force
+  $leaf = Split-Path $p -Leaf
+  Get-ChildItem (Split-Path $p -Parent) -Filter "$leaf.bak-*" | Sort-Object LastWriteTime -Descending |
+    Select-Object -Skip $keepBackups | Remove-Item -Force
+}
+# Kit-owned files: overwrite only if the local copy is the one the kit wrote last time.
+# A local edit is kept (with a warning) in -Quiet mode, and backed up then replaced otherwise.
+function Sync-File($src, $dst, $key) {
   if (-not (Test-Path $src)) { return }
-  $same = (Test-Path $dst) -and ((Get-FileHash $src).Hash -eq (Get-FileHash $dst).Hash)
-  if ($same) { Say "= $dst (unchanged)"; return }
-  if (-not $Apply) { Say "~ would update $dst"; return }
-  if (Test-Path $dst) { Copy-Item $dst "$dst.bak-$stamp" -Force }
+  $srcHash = FileHash $src
+  $dstHash = FileHash $dst
+  if ($srcHash -eq $dstHash) { $applied[$key] = $srcHash; Say "= $dst (unchanged)"; return }
+  $editedLocally = $dstHash -and $applied[$key] -and ($dstHash -ne $applied[$key])
+  if (-not $Apply) {
+    $note = ''
+    if ($editedLocally) { $note = ' (local edits will be backed up)' }
+    Say "~ would update $dst$note"
+    return
+  }
+  if ($editedLocally -and $Quiet) {
+    Warn "$dst was edited outside the kit; not replaced. Move the change to the kit, then run bootstrap.ps1 -Apply."
+    return
+  }
+  Backup $dst
   Copy-Item $src $dst -Force
+  $applied[$key] = $srcHash
   Say "+ updated $dst"
 }
 
-# 1. Get / update the kit (fast-forward only; offline is fine)
+if (-not (Test-Path $claude)) { New-Item -ItemType Directory -Force $claude | Out-Null }
+
+$state = ReadJson $statePath
+if ($null -eq $state) { $state = [pscustomobject]@{} }
+$applied = @{}
+if (HasProp $state 'applied') { foreach ($p in $state.applied.PSObject.Properties) { $applied[$p.Name] = $p.Value } }
+$lastPull = [datetime]::MinValue
+if (HasProp $state 'lastPull') { [void][datetime]::TryParse($state.lastPull, [ref]$lastPull) }
+
+# 1. Get / update the kit (fast-forward only; offline is fine; throttled in -Quiet mode)
+$pulled = $false
 if (Test-Path (Join-Path $KitDir '.git')) {
-  $null = & git -C $KitDir pull --ff-only --quiet 2>&1
-  if ($LASTEXITCODE -ne 0) { Say '! git pull skipped (offline or local changes); using local kit' }
+  $due = $Force -or -not $Quiet -or ((Get-Date) - $lastPull) -ge $pullEvery
+  if ($due) {
+    $headBefore = (& git -C $KitDir rev-parse HEAD 2>$null)
+    $null = & git -C $KitDir -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 pull --ff-only --quiet 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      $lastPull = Get-Date
+      $pulled = $headBefore -ne (& git -C $KitDir rev-parse HEAD 2>$null)
+    } else {
+      Warn 'git pull skipped (offline, auth, or local changes in the kit); using the local copy'
+    }
+  }
 } else {
   if (-not $Apply) { Say "Kit not found at $KitDir. Clone it first: gh repo clone Jeremie-pires/claude-kit $KitDir"; exit 1 }
   $null = & git clone --quiet $Repo $KitDir 2>&1
   if ($LASTEXITCODE -ne 0) { Say '! clone failed (auth? network?)'; exit 1 }
+  $lastPull = Get-Date
 }
-
-if (-not (Test-Path $claude)) { New-Item -ItemType Directory -Force $claude | Out-Null }
 
 # 2. Merge settings.json (kit keys only; everything local is preserved)
 $basePath = Join-Path $KitDir 'global\settings.base.json'
 $curPath = Join-Path $claude 'settings.json'
 $base = ReadJson $basePath
 $cur = ReadJson $curPath
-$before = ToJson (ReadJson $curPath)
 
-# statusLine: kit wins (portable path)
-if (HasProp $base 'statusLine') { SetProp $cur 'statusLine' $base.statusLine }
-
-# maps: add/overwrite kit entries, keep the rest
-foreach ($k in 'env', 'extraKnownMarketplaces', 'enabledPlugins') {
-  if (HasProp $base $k) {
-    if (-not (HasProp $cur $k)) { SetProp $cur $k ([pscustomobject]@{}) }
-    foreach ($p in $base.$k.PSObject.Properties) { SetProp $cur.$k $p.Name $p.Value }
-  }
-}
-
-# permissions: union of lists
-if (HasProp $base 'permissions') {
-  if (-not (HasProp $cur 'permissions')) { SetProp $cur 'permissions' ([pscustomobject]@{}) }
-  foreach ($list in 'allow', 'ask', 'deny') {
-    if (HasProp $base.permissions $list) {
-      $existing = @()
-      if (HasProp $cur.permissions $list) { $existing = @($cur.permissions.$list) }
-      $merged = @($existing + @($base.permissions.$list) | Select-Object -Unique)
-      SetProp $cur.permissions $list $merged
-    }
-  }
-}
-
-# hooks: append kit entries whose command is not already present
-if (HasProp $base 'hooks') {
-  if (-not (HasProp $cur 'hooks')) { SetProp $cur 'hooks' ([pscustomobject]@{}) }
-  foreach ($ev in $base.hooks.PSObject.Properties) {
-    $curList = @()
-    if (HasProp $cur.hooks $ev.Name) { $curList = @($cur.hooks.($ev.Name)) }
-    $cmds = @($curList | ForEach-Object { $_.hooks } | ForEach-Object { $_.command })
-    foreach ($entry in @($ev.Value)) {
-      $new = @($entry.hooks | Where-Object { $cmds -notcontains $_.command })
-      if ($new.Count -gt 0) { $curList += $entry }
-    }
-    SetProp $cur.hooks $ev.Name $curList
-  }
-}
-
-# defaults: only when missing locally
-foreach ($k in 'autoUpdatesChannel', 'theme', 'model') {
-  if ((HasProp $base $k) -and -not (HasProp $cur $k)) { SetProp $cur $k $base.$k }
-}
-
-$after = ToJson $cur
-if ($before -eq $after) {
-  Say '= settings.json (unchanged)'
-} elseif (-not $Apply) {
-  $a = Join-Path $env:TEMP 'claude-settings.current.json'
-  $b = Join-Path $env:TEMP 'claude-settings.merged.json'
-  [IO.File]::WriteAllText($a, $before, $utf8)
-  [IO.File]::WriteAllText($b, $after, $utf8)
-  Say '~ settings.json would change:'
-  & git --no-pager diff --no-index --no-color -U1 -- $a $b
+if ($null -eq $base) {
+  Warn "$basePath is not valid JSON; settings.json left untouched"
+} elseif ($null -eq $cur) {
+  Warn "$curPath is not valid JSON; fix it (or restore a .bak) then re-run. Left untouched."
 } else {
-  if (Test-Path $curPath) { Copy-Item $curPath "$curPath.bak-$stamp" -Force }
-  [IO.File]::WriteAllText($curPath, $after, $utf8)
-  Say '+ settings.json updated (backup kept)'
-  Get-ChildItem $claude -Filter 'settings.json.bak-*' | Sort-Object LastWriteTime -Descending |
-    Select-Object -Skip 5 | Remove-Item -Force
+  $before = ToJson (ReadJson $curPath)
+
+  # statusLine: kit wins (portable path)
+  if (HasProp $base 'statusLine') { SetProp $cur 'statusLine' $base.statusLine }
+
+  # maps: add/overwrite kit entries, keep the rest
+  foreach ($k in 'env', 'extraKnownMarketplaces', 'enabledPlugins') {
+    if (HasProp $base $k) {
+      if (-not (HasProp $cur $k)) { SetProp $cur $k ([pscustomobject]@{}) }
+      foreach ($p in $base.$k.PSObject.Properties) { SetProp $cur.$k $p.Name $p.Value }
+    }
+  }
+
+  # permissions: union of lists
+  if (HasProp $base 'permissions') {
+    if (-not (HasProp $cur 'permissions')) { SetProp $cur 'permissions' ([pscustomobject]@{}) }
+    foreach ($list in 'allow', 'ask', 'deny') {
+      if (HasProp $base.permissions $list) {
+        $existing = @()
+        if (HasProp $cur.permissions $list) { $existing = @($cur.permissions.$list) }
+        $merged = @($existing + @($base.permissions.$list) | Select-Object -Unique)
+        SetProp $cur.permissions $list $merged
+      }
+    }
+  }
+
+  # hooks: kit-owned entries (command mentions .claude-kit) are replaced by the kit's; others are kept
+  if (HasProp $base 'hooks') {
+    if (-not (HasProp $cur 'hooks')) { SetProp $cur 'hooks' ([pscustomobject]@{}) }
+    foreach ($ev in $base.hooks.PSObject.Properties) {
+      $curList = @()
+      if (HasProp $cur.hooks $ev.Name) {
+        $curList = @($cur.hooks.($ev.Name) | Where-Object {
+          -not @($_.hooks | Where-Object { $_.command -match '\.claude-kit[\\/]' }).Count
+        })
+      }
+      SetProp $cur.hooks $ev.Name @($curList + @($ev.Value))
+    }
+  }
+
+  # defaults: only when missing locally
+  foreach ($k in 'autoUpdatesChannel', 'theme', 'model') {
+    if ((HasProp $base $k) -and -not (HasProp $cur $k)) { SetProp $cur $k $base.$k }
+  }
+
+  $after = ToJson $cur
+  $valid = $true
+  try { $null = $after | ConvertFrom-Json -ErrorAction Stop } catch { $valid = $false }
+
+  if (-not $valid) {
+    Warn 'merged settings.json did not re-parse; left untouched'
+  } elseif ($before -eq $after) {
+    Say '= settings.json (unchanged)'
+  } elseif (-not $Apply) {
+    $a = Join-Path $env:TEMP 'claude-settings.current.json'
+    $b = Join-Path $env:TEMP 'claude-settings.merged.json'
+    [IO.File]::WriteAllText($a, $before, $utf8)
+    [IO.File]::WriteAllText($b, $after, $utf8)
+    Say '~ settings.json would change:'
+    & git --no-pager diff --no-index --no-color -U1 -- $a $b
+  } else {
+    Backup $curPath
+    [IO.File]::WriteAllText($curPath, $after, $utf8)
+    Say '+ settings.json updated (backup kept)'
+  }
+
+  # Credentials belong in the user environment, not in a settings file that gets backed up
+  if (HasProp $cur 'env') {
+    $secretKeys = @($cur.env.PSObject.Properties.Name | Where-Object { $_ -match '(TOKEN|API_KEY|SECRET|PASSWORD)' })
+    if ($secretKeys.Count) {
+      Warn "settings.json env holds credentials ($($secretKeys -join ', ')); move them to user environment variables (see README, Security notes)"
+    }
+  }
 }
 
-# 3. Global rules and statusline script
-Sync-File (Join-Path $KitDir 'global\CLAUDE.md') (Join-Path $claude 'CLAUDE.md')
-Sync-File (Join-Path $KitDir 'global\statusline-command.sh') (Join-Path $claude 'statusline-command.sh')
+# 3. Global rules and status line script
+Sync-File (Join-Path $KitDir 'global\CLAUDE.md') (Join-Path $claude 'CLAUDE.md') 'CLAUDE.md'
+Sync-File (Join-Path $KitDir 'global\statusline.js') (Join-Path $claude 'statusline.js') 'statusline.js'
 
-# 4. Install enabled kit plugins that are not installed yet (enabledPlugins alone does not download them)
+# 4. Plugins: install the missing ones; after a pull with new commits, refresh the kit plugin
 $installedPath = Join-Path $claude 'plugins\installed_plugins.json'
 $installed = @()
-if (Test-Path $installedPath) { $installed = @((ReadJson $installedPath).plugins.PSObject.Properties.Name) }
+$installedJson = ReadJson $installedPath
+if ((HasProp $installedJson 'plugins')) { $installed = @($installedJson.plugins.PSObject.Properties.Name) }
 $wanted = @()
 if (HasProp $base 'enabledPlugins') { $wanted = @($base.enabledPlugins.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object { $_.Name }) }
 $missing = @($wanted | Where-Object { $installed -notcontains $_ })
 $claudeCli = Get-Command claude -ErrorAction SilentlyContinue
 
-foreach ($id in $missing) {
-  if (-not $Apply) { Say "~ would install plugin $id"; continue }
-  if (-not $claudeCli) { Say "! claude CLI not found; run in Claude Code: /plugin install $id"; continue }
-  if ($Quiet) {
-    # SessionStart hook: never block startup, install in the background
-    Start-Process -FilePath $claudeCli.Source -ArgumentList @('plugin', 'install', $id, '--scope', 'user') -WindowStyle Hidden
-  } else {
-    Say "+ installing plugin $id"
-    & $claudeCli.Source plugin install $id --scope user
-    if ($LASTEXITCODE -ne 0) { Say "! install failed for $id; run in Claude Code: /plugin install $id" }
-  }
+# The SessionStart hook is async, so these calls never delay the session
+function Run-Claude([string[]]$cliArgs) {
+  if ($Quiet) { $null = & $claudeCli.Source @cliArgs 2>&1 } else { & $claudeCli.Source @cliArgs }
+  return ($LASTEXITCODE -eq 0)
 }
 
-if (-not $Apply) { Say "`nPreview only. Re-run with -Apply to write." }
+foreach ($id in $missing) {
+  if (-not $Apply) { Say "~ would install plugin $id"; continue }
+  if (-not $claudeCli) { Warn "claude CLI not found; run in Claude Code: /plugin install $id"; continue }
+  Say "+ installing plugin $id"
+  if (-not (Run-Claude @('plugin', 'install', $id, '--scope', 'user'))) { Warn "install failed for $id; run in Claude Code: /plugin install $id" }
+}
+
+if ($Apply -and $pulled -and $claudeCli -and ($installed -contains 'claude-kit@workshop')) {
+  Say '+ refreshing claude-kit@workshop (restart Claude Code to load it)'
+  if (-not (Run-Claude @('plugin', 'marketplace', 'update', 'workshop'))) { Warn 'marketplace update failed for workshop' }
+  elseif (-not (Run-Claude @('plugin', 'update', 'claude-kit@workshop', '--scope', 'user'))) { Warn 'plugin update failed for claude-kit@workshop' }
+}
+
+# 5. Record what was applied and any warnings (read by the status line)
+if ($Apply) {
+  $newState = [pscustomobject]@{
+    lastRun  = (Get-Date).ToString('o')
+    lastPull = $lastPull.ToString('o')
+    applied  = [pscustomobject]$applied
+    warnings = @($warnings)
+  }
+  [IO.File]::WriteAllText($statePath, (ToJson $newState), $utf8)
+} else {
+  Say "`nPreview only. Re-run with -Apply to write."
+}
