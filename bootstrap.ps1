@@ -238,12 +238,14 @@ foreach ($id in $missing) {
   if (-not $Apply) { Say "~ would install plugin $id"; continue }
   if (-not $claudeCli) { Warn "claude CLI not found; run in Claude Code: /plugin install $id"; continue }
   Say "+ installing plugin $id"
-  if (-not (Run-Claude @('plugin', 'install', $id, '--scope', 'user'))) { Warn "install failed for $id; run in Claude Code: /plugin install $id" }
+  if (Run-Claude @('plugin', 'install', $id, '--scope', 'user')) { $installed += $id }
+  else { Warn "install failed for $id; run in Claude Code: /plugin install $id" }
 }
 
+# Remove the old plugin only once its replacement is in place, so the commands never disappear
 if ($installed -contains 'claude-kit@workshop') {
   if (-not $Apply) { Say '~ would uninstall plugin claude-kit@workshop (renamed to toolkit@workshop)' }
-  elseif ($claudeCli) {
+  elseif ($claudeCli -and ($installed -contains 'toolkit@workshop')) {
     Say '+ uninstalling plugin claude-kit@workshop (renamed to toolkit@workshop)'
     if (-not (Run-Claude @('plugin', 'uninstall', 'claude-kit@workshop', '--scope', 'user'))) { Warn 'uninstall failed for claude-kit@workshop; run in Claude Code: /plugin uninstall claude-kit@workshop' }
   }
