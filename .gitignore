@@ -7,3 +7,4 @@ history.jsonl
 node_modules/
 .caveman-*
 *.log
+!.env.example

@@ -19,3 +19,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Third-party content
+
+The pattern lists, word lists and examples in SKILL.md are adapted from the
+Wikipedia page "Wikipedia:Signs of AI writing" by the WikiProject AI Cleanup
+contributors: https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
+(see the page history for the list of authors). That text is licensed under
+the Creative Commons Attribution-ShareAlike 4.0 International License
+(CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+
+The MIT license above does not apply to those adapted parts. They remain under
+CC BY-SA 4.0, and any modified version of them must be shared under the same
+license. Changes were made: the text was condensed and rewritten as
+instructions for an AI agent.

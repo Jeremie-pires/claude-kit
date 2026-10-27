@@ -31,4 +31,5 @@ Rules:
 - "Done" covers the current milestone only. Drop items that no longer help to resume work.
 - Whole file under 500 words. If "Decisions" grows past ~20 entries, propose moving the oldest ones to `docs/decisions.md`.
 - Facts only, full sentences where needed, no filler, no caveman style. No secrets, tokens or credentials.
+- Write it as if it were public: no names of people, accounts, emails, employers or clients, no local paths or access details. Use generic terms ("the work account", "a collaborator"). Before reporting, re-read the file for any such detail.
 - Do not commit. Report in one line what changed.

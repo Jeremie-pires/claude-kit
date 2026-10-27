@@ -9,12 +9,14 @@
     & $HOME\.claude-kit\bootstrap.ps1            # preview
     & $HOME\.claude-kit\bootstrap.ps1 -Apply     # apply
   After that, an async SessionStart hook runs it with -Apply -Quiet. In that mode the
-  git pull runs at most once every 24 hours, and warnings go to ~/.claude/claude-kit-sync.json
-  (the status line shows them as "kit!").
+  git pull runs at most once every 24 hours, upstream changes to files that run code
+  (bootstrap.ps1, settings.base.json, statusline.js, plugin hooks) are held back until a
+  manual -Apply, and warnings go to ~/.claude/claude-kit-sync.json (the status line shows
+  them as "kit!").
 
   What it touches: ~/.claude/settings.json (merged, backed up), ~/.claude/CLAUDE.md,
-  ~/.claude/statusline.js, ~/.claude/claude-kit-sync.json. It never touches credentials,
-  history or projects.
+  ~/.claude/statusline.js, ~/.claude/claude-kit-sync.json. The first backup of each file is
+  also kept for good as <file>.pre-kit. It never touches credentials, history or projects.
 #>
 [CmdletBinding()]
 param(
@@ -33,6 +35,8 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $statePath = Join-Path $claude 'claude-kit-sync.json'
 $pullEvery = [TimeSpan]::FromHours(24)
 $keepBackups = 5
+# Upstream changes to these paths run code on this machine, so auto-sync never takes them unreviewed
+$reviewPattern = '^(bootstrap\.ps1|global/settings\.base\.json|global/statusline\.js)$|^plugins/[^/]+/hooks/'
 $warnings = New-Object System.Collections.Generic.List[string]
 
 function Say($m) { if (-not $Quiet) { Write-Host $m } }
@@ -55,8 +59,14 @@ function ToJson($o) {
 function FileHash($p) { if (Test-Path $p) { return (Get-FileHash $p).Hash } return '' }
 function Backup($p) {
   if (-not (Test-Path $p)) { return }
-  Copy-Item $p "$p.bak-$stamp" -Force
   $leaf = Split-Path $p -Leaf
+  # The user's copy from before the kit is never pruned: the oldest backup if one is left, else the file itself
+  $preKit = "$p.pre-kit"
+  if (-not (Test-Path $preKit)) {
+    $oldest = Get-ChildItem (Split-Path $p -Parent) -Filter "$leaf.bak-*" | Sort-Object LastWriteTime | Select-Object -First 1
+    if ($oldest) { Copy-Item $oldest.FullName $preKit } else { Copy-Item $p $preKit }
+  }
+  Copy-Item $p "$p.bak-$stamp" -Force
   Get-ChildItem (Split-Path $p -Parent) -Filter "$leaf.bak-*" | Sort-Object LastWriteTime -Descending |
     Select-Object -Skip $keepBackups | Remove-Item -Force
 }
@@ -99,12 +109,25 @@ if (Test-Path (Join-Path $KitDir '.git')) {
   $due = $Force -or -not $Quiet -or ((Get-Date) - $lastPull) -ge $pullEvery
   if ($due) {
     $headBefore = (& git -C $KitDir rev-parse HEAD 2>$null)
-    $null = & git -C $KitDir -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 pull --ff-only --quiet 2>&1
+    $null = & git -C $KitDir -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet 2>&1
+    $held = @()
     if ($LASTEXITCODE -eq 0) {
-      $lastPull = Get-Date
-      $pulled = $headBefore -ne (& git -C $KitDir rev-parse HEAD 2>$null)
+      $held = @(& git -C $KitDir diff --name-only HEAD '@{u}' 2>$null | Where-Object { $_ -match $reviewPattern })
+    }
+    if ($LASTEXITCODE -ne 0) {
+      Warn 'git fetch skipped (offline, auth, or no upstream branch); using the local copy'
+    } elseif ($held.Count -and ($Quiet -or -not $Apply)) {
+      # lastPull is left as is, so the check runs again at every launch until the change is reviewed
+      Warn "upstream changes to $($held -join ', ') wait for review: read git -C $KitDir log -p HEAD..@{u}, then run bootstrap.ps1 -Apply"
     } else {
-      Warn 'git pull skipped (offline, auth, or local changes in the kit); using the local copy'
+      foreach ($f in $held) { Say "~ upstream change to $f (runs code on this machine)" }
+      $null = & git -C $KitDir merge --ff-only --quiet '@{u}' 2>&1
+      if ($LASTEXITCODE -eq 0) {
+        $lastPull = Get-Date
+        $pulled = $headBefore -ne (& git -C $KitDir rev-parse HEAD 2>$null)
+      } else {
+        Warn 'git merge skipped (local changes or diverged history in the kit); using the local copy'
+      }
     }
   }
 } else {
@@ -165,14 +188,14 @@ if ($null -eq $base) {
     }
   }
 
-  # hooks: kit-owned entries (command mentions .claude-kit) are replaced by the kit's; others are kept
+  # hooks: kit-owned entries (command runs the kit's bootstrap.ps1) are replaced by the kit's; others are kept
   if (HasProp $base 'hooks') {
     if (-not (HasProp $cur 'hooks')) { SetProp $cur 'hooks' ([pscustomobject]@{}) }
     foreach ($ev in $base.hooks.PSObject.Properties) {
       $curList = @()
       if (HasProp $cur.hooks $ev.Name) {
         $curList = @($cur.hooks.($ev.Name) | Where-Object {
-          -not @($_.hooks | Where-Object { $_.command -match '\.claude-kit[\\/]' }).Count
+          -not @($_.hooks | Where-Object { $_.command -match '\.claude-kit[\\/]bootstrap\.ps1' }).Count
         })
       }
       SetProp $cur.hooks $ev.Name @($curList + @($ev.Value))
@@ -193,12 +216,17 @@ if ($null -eq $base) {
   } elseif ($before -eq $after) {
     Say '= settings.json (unchanged)'
   } elseif (-not $Apply) {
+    # The copies hold the whole settings.json, credentials included, so they never outlive the diff
     $a = Join-Path $env:TEMP 'claude-settings.current.json'
     $b = Join-Path $env:TEMP 'claude-settings.merged.json'
-    [IO.File]::WriteAllText($a, $before, $utf8)
-    [IO.File]::WriteAllText($b, $after, $utf8)
-    Say '~ settings.json would change:'
-    & git --no-pager diff --no-index --no-color -U1 -- $a $b
+    try {
+      [IO.File]::WriteAllText($a, $before, $utf8)
+      [IO.File]::WriteAllText($b, $after, $utf8)
+      Say '~ settings.json would change:'
+      & git --no-pager diff --no-index --no-color -U1 -- $a $b
+    } finally {
+      Remove-Item $a, $b -Force -ErrorAction SilentlyContinue
+    }
   } else {
     Backup $curPath
     [IO.File]::WriteAllText($curPath, $after, $utf8)

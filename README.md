@@ -83,10 +83,10 @@ The kit also enables two third-party plugins: [`agent-skills`](https://github.co
 
 - **Rules**: edit `global/CLAUDE.md` in your fork, or run `/toolkit:add-rule <rule>`. These rules are shared by all your machines.
 - **Personal preferences** (reply language, tone, anything you don't want in the repo): put them in `~/.claude/rules/`, for example `~/.claude/rules/personal.md` with `- Chat language: always French.` Claude Code loads that folder in every project, and the kit never touches it.
-- **Settings**: edit `global/settings.base.json`. Keep it free of absolute paths and project-specific blocks.
+- **Settings**: edit `global/settings.base.json`. Keep it free of absolute paths and project-specific blocks. `theme`, `model` and `autoUpdatesChannel` are the author's defaults: they are only set when your `settings.json` has no value, so change or remove them freely.
 - **Commands and skills**: add a file to `plugins/toolkit/commands/` (with a `description` frontmatter) or `plugins/toolkit/skills/<name>/SKILL.md`, run `claude plugin validate .`, commit and push. `plugin.json` has no `version` on purpose: the plugin follows your commits, so you don't need to bump anything.
 
-Your other machines pick up a change at their next daily pull, or right away with `bootstrap.ps1 -Apply -Force`. Do your edits in the clone at `~/.claude-kit` so there is a single working copy.
+Your other machines pick up a change at their next daily pull, or right away with `bootstrap.ps1 -Apply -Force`. A change to `bootstrap.ps1`, `global/settings.base.json`, `global/statusline.js` or a plugin's `hooks/` folder waits for a manual `bootstrap.ps1 -Apply` (see [Security](#security)). Do your edits in the clone at `~/.claude-kit` so there is a single working copy.
 
 To take improvements from this repo, use **Sync fork** on GitHub and read the diff before you merge. Your machines only receive it after that.
 
@@ -104,7 +104,7 @@ To take improvements from this repo, use **Sync fork** on GitHub and read the di
 
 It never touches `.credentials.json`, `history.jsonl`, `projects/`, `~/.claude/rules/` or any project-level `.claude/`.
 
-On every launch, an async `SessionStart` hook runs `bootstrap.ps1 -Apply -Quiet` in the background. The fast-forward `git pull` runs at most once every 24 hours, and the merge runs every time. When a pull brings new commits, the `toolkit` plugin is refreshed (`claude plugin marketplace update workshop`, then `claude plugin update`). If you are offline or have local changes, the pull is skipped and the local copy is used. Changes take effect at the next session start.
+On every launch, an async `SessionStart` hook runs `bootstrap.ps1 -Apply -Quiet` in the background. The fetch and fast-forward run at most once every 24 hours, and the settings merge runs every time. If the new commits change a file that runs code (`bootstrap.ps1`, `global/settings.base.json`, `global/statusline.js`, `plugins/*/hooks/`), auto-sync does not take them: it raises a `kit!` warning until you read the diff (`git -C ~/.claude-kit log -p HEAD..@{u}`) and run `bootstrap.ps1 -Apply` by hand. When a pull brings new commits, the `toolkit` plugin is refreshed (`claude plugin marketplace update workshop`, then `claude plugin update`). If you are offline or have local changes, the pull is skipped and the local copy is used. Changes take effect at the next session start.
 
 Warnings (pull failed, local edit kept, credentials in settings, invalid JSON) go to `~/.claude/claude-kit-sync.json`, and the status line shows `kit! (n)` while there are any.
 
@@ -112,19 +112,19 @@ If `-Apply` reports that a plugin install failed, run the install by hand inside
 
 ## Uninstall and rollback
 
-Every change to `settings.json`, `CLAUDE.md` or `statusline.js` keeps a `.bak-<timestamp>` copy in `~/.claude` (the last 5 of each).
+Every change to `settings.json`, `CLAUDE.md` or `statusline.js` keeps a `.bak-<timestamp>` copy in `~/.claude` (the last 5 of each). The first time the kit replaces one of them, your original is also kept as `<file>.pre-kit`, which is never pruned.
 
 To remove the kit:
 
 1. In `~/.claude/settings.json`, delete the `SessionStart` hook that calls `bootstrap.ps1`, the `toolkit@workshop` entry in `enabledPlugins` and the `workshop` entry in `extraKnownMarketplaces`.
-2. Optionally restore `settings.json.bak-<timestamp>` and `CLAUDE.md.bak-<timestamp>`.
+2. Optionally restore `settings.json.pre-kit` and `CLAUDE.md.pre-kit` (your files from before the kit), or a `.bak-<timestamp>` copy.
 3. Optionally delete `~/.claude-kit`.
 
 To keep the kit but stop auto-sync, only do step 1 for the `SessionStart` hook.
 
 ## Security
 
-- **The sync hook runs `bootstrap.ps1` from your clone at every launch.** Anyone who can push to that repo can run code on your machines. That's why you install from your own fork and review upstream changes before syncing them. Turn on 2FA on your GitHub account, and check `git log` after a pull you didn't expect.
+- **The sync hook runs `bootstrap.ps1` from your clone at every launch.** Anyone who can push to that repo can run code on your machines. That's why you install from your own fork and review upstream changes before syncing them. Auto-sync also holds back any change to the files that run code until you apply it by hand. Turn on 2FA on your GitHub account, and check `git log` after a pull you didn't expect.
 - **Keep API credentials out of `settings.json`.** Tokens such as `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` must not live in its `env` block: the file is backed up on every change, so the token would end up in several plain-text copies. Set the token as a user environment variable instead (PowerShell: `[Environment]::SetEnvironmentVariable('ANTHROPIC_AUTH_TOKEN', '<token>', 'User')`, then restart the terminal), remove it from `settings.json` and delete the old `settings.json.bak-*` files. The bootstrap raises a warning while one is present.
 - **Default permissions** (`global/settings.base.json`): `git push` asks first. Force-push, `reset --hard`, `clean -f*`, `branch -D` and the common `rm -rf` spellings are denied. `.env` and `.env.*` files (except `.env.example`) can't be read at any depth, and neither can the `settings.json` backups. Bash rules match command prefixes only, so `/bin/rm -rf` or `bash -c "..."` get through. Claude Code's own permission prompts and the sandbox remain the real safety net.
 - The Caveman Cloud skills (`caveman-setup`, `-manage`, `-optimize`, `-discover`, `-evidence-review`, `-learn`) are denied because they target a hosted service the kit doesn't use.
@@ -183,9 +183,9 @@ Follow [Uninstall and rollback](#uninstall-and-rollback). Ask the user before ea
 
 ## Credits and license
 
-The kit is MIT licensed, see [LICENSE](LICENSE). It bundles two MIT-licensed skills, each with its license file:
+The kit is MIT licensed, see [LICENSE](LICENSE). It bundles two third-party skills, each with its license file:
 
-- `humanizer` by Siqi Chen, from [blader/humanizer](https://github.com/blader/humanizer), based on Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing).
+- `humanizer` by Siqi Chen, from [blader/humanizer](https://github.com/blader/humanizer). Its pattern lists and examples are adapted from Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) (WikiProject AI Cleanup contributors) under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); those parts stay under CC BY-SA 4.0, see its `LICENSE`.
 - `find-skills` by Vercel, from [vercel-labs/skills](https://github.com/vercel-labs/skills), adapted for this kit.
 
 This is an independent project. Anthropic doesn't make or endorse it.

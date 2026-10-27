@@ -7,7 +7,7 @@ description: |
   inflated symbolism, promotional language, superficial -ing analyses, vague
   attributions, em dash overuse, rule of three, AI vocabulary words, passive
   voice, negative parallelisms, and filler phrases.
-license: MIT
+license: MIT AND CC-BY-SA-4.0
 metadata:
   version: "2.9.1"
 ---
