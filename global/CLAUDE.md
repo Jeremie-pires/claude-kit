@@ -3,7 +3,7 @@
 Precedence: the project's `CLAUDE.md` overrides this file on any conflict. Project rules must state exceptions explicitly.
 
 ## Language & verbosity
-- Chat language: always French, whatever the mode. This is an explicit reply-language instruction for the `caveman` plugin.
+- Chat language: reply in the language the user writes in. A personal rule (see `~/.claude/rules/`) can pin one language.
 - Execution (doing a task, status updates, confirmations): `caveman` voice, terse. No recap, no restating the request.
 - Discussion (the user asks a question, wants an explanation, Q&A, a decision to make): normal full prose. This overrides `caveman` for these turns. Go back to terse when execution resumes.
 - Always full prose: security warnings, irreversible actions, questions or options put to the user.
@@ -50,7 +50,7 @@ Use a skill only when it clearly applies. When several cover the same need, use 
 ## Memory & state
 - Project state (done / next / decisions) lives in `AI_STATE.md`, committed with the project. Rules and methods live in `CLAUDE.md`. Never mix them.
 - Claude's auto-memory holds only personal preferences about how to work, never project state.
-- When resuming ("on reprend", "où en est-on") and `AI_STATE.md` exists, read it first (`/toolkit:load-state`).
+- When resuming ("let's resume", "where are we", or the same in the user's language) and `AI_STATE.md` exists, read it first (`/toolkit:load-state`).
 - At the end of a work session or milestone, run `/toolkit:save-state` and stage `AI_STATE.md` with that commit. Not on every commit.
 - Commits follow Conventional Commits unless the project says otherwise.
 
