@@ -40,9 +40,6 @@
     },
     "caveman": {
       "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
-    },
-    "workshop": {
-      "source": { "source": "github", "repo": "Jeremie-pires/claude-kit" }
     }
   },
   "enabledPlugins": {

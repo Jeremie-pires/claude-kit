@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Claude Code status line: one Node process per refresh, no external deps.
 // Line 1: model | project | branch | caveman mode | kit sync warnings
-// Line 2: context bar | quota (5h/7d if subscriber, spend limit behind a gateway) | session cost and duration
+// Line 2: context bar | quota (5h/7d windows, or a spend limit when one is set) | session cost and duration
 'use strict';
 
 const { execFileSync } = require('node:child_process');

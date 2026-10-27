@@ -4,8 +4,8 @@
 
 .DESCRIPTION
   Default = PREVIEW (nothing written, shows the diff). Use -Apply to write.
-  First run on a new PC:
-    gh repo clone Jeremie-pires/claude-kit $HOME\.claude-kit
+  First run on a new PC (use your fork):
+    gh repo clone <you>/claude-kit $HOME\.claude-kit
     & $HOME\.claude-kit\bootstrap.ps1            # preview
     & $HOME\.claude-kit\bootstrap.ps1 -Apply     # apply
   After that, an async SessionStart hook runs it with -Apply -Quiet. In that mode the
@@ -22,7 +22,8 @@ param(
   [switch]$Quiet,
   [switch]$Force,
   [string]$KitDir = (Join-Path $HOME '.claude-kit'),
-  [string]$Repo = 'https://github.com/Jeremie-pires/claude-kit.git'
+  # Only used when $KitDir does not exist yet; afterwards the clone's own origin is the source
+  [string]$Repo
 )
 
 $ErrorActionPreference = 'Continue'
@@ -107,7 +108,7 @@ if (Test-Path (Join-Path $KitDir '.git')) {
     }
   }
 } else {
-  if (-not $Apply) { Say "Kit not found at $KitDir. Clone it first: gh repo clone Jeremie-pires/claude-kit $KitDir"; exit 1 }
+  if (-not $Apply -or -not $Repo) { Say "Kit not found at $KitDir. Clone your fork first: gh repo clone <you>/claude-kit $KitDir"; exit 1 }
   $null = & git clone --quiet $Repo $KitDir 2>&1
   if ($LASTEXITCODE -ne 0) { Say '! clone failed (auth? network?)'; exit 1 }
   $lastPull = Get-Date
@@ -118,6 +119,15 @@ $basePath = Join-Path $KitDir 'global\settings.base.json'
 $curPath = Join-Path $claude 'settings.json'
 $base = ReadJson $basePath
 $cur = ReadJson $curPath
+
+# The kit's marketplace points at wherever this clone came from, so a fork needs no edits
+$origin = (& git -C $KitDir remote get-url origin 2>$null)
+if ($null -ne $base -and $origin) {
+  if ($origin -match 'github\.com[:/]([^/]+/[^/]+?)(\.git)?/?$') { $source = [pscustomobject]@{ source = 'github'; repo = $Matches[1] } }
+  else { $source = [pscustomobject]@{ source = 'git'; url = $origin } }
+  if (-not (HasProp $base 'extraKnownMarketplaces')) { SetProp $base 'extraKnownMarketplaces' ([pscustomobject]@{}) }
+  SetProp $base.extraKnownMarketplaces 'workshop' ([pscustomobject]@{ source = $source })
+}
 
 if ($null -eq $base) {
   Warn "$basePath is not valid JSON; settings.json left untouched"
